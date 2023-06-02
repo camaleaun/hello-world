@@ -1,0 +1,71 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: write-all
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+
+      - name: Cache WP-CLI and dist-archive
+        uses: actions/cache@v2
+        with:
+          path: ~/.wp-cli/cache
+          key: wp-cli-dist-archive-${{ runner.os }}
+          restore-keys: |
+            wp-cli-dist-archive-${{ runner.os }}-
+
+      - name: Install WP-CLI
+        run: |
+          if ! command -v wp > /dev/null; then
+            curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+            chmod +x wp-cli.phar
+            sudo mv wp-cli.phar /usr/local/bin/wp
+          fi
+
+      - name: Install dist-archive
+        run: |
+          if ! wp package list | grep -q 'dist-archive-command'; then
+            wp package install wp-cli/dist-archive-command --allow-root
+          fi
+
+      - name: Extract version from hello-world.php
+        id: extract_version
+        run: |
+          version=$(grep -oP "Version:\s*\K[\d.]+" hello-world.php)
+          echo "VERSION=${version}" >> $GITHUB_ENV
+
+      - name: Create ZIP archive
+        run: |
+          version=${{ env.VERSION }}
+          wp dist-archive . "./hello-world.${version}.zip"
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: ${{ github.ref }}
+          draft: false
+          prerelease: false
+
+      - name: Upload ZIP archive as Release asset
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./hello-world.${{ env.VERSION }}.zip
+          asset_name: hello-world.${{ env.VERSION }}.zip
+          asset_content_type: application/zip
